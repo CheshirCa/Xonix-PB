@@ -1,16 +1,28 @@
-﻿; Xonix / Qix-like game in PureBasic 6.21
+﻿; Xonix Qix-like game in PureBasic 6.21
+; Version 1.1
+; (c) CheshirCa 2025 https://github.com/CheshirCa/Xonix-PB
 ; Windows version with graphical console
 
 EnableExplicit
 
 ; --- Конфигурация игры ----------------------------------------------------
-#TARGET_PERCENT = 75   ; Процент заполнения для завершения уровня
-#START_LIVES = 3       ; Начальное количество жизней
-#START_ENEMIES = 2     ; Начальное количество врагов
-#MAX_FPS = 30          ; Максимальный FPS
-#BASE_SPEED = 0.6      ; Базовая скорость врагов (ячеек/секунду)
-#SPEED_GROWTH = 0.15   ; Увеличение скорости врагов за уровень
-#SPEED_CHANGE = 0.1    ; Изменение скорости при нажатии +/-
+; Значения по умолчанию
+#DEFAULT_TARGET_PERCENT = 75   ; Процент заполнения для завершения уровня
+#DEFAULT_START_LIVES = 3       ; Начальное количество жизней
+#DEFAULT_START_ENEMIES = 2     ; Начальное количество врагов
+#DEFAULT_MAX_FPS = 30          ; Максимальный FPS
+#DEFAULT_BASE_SPEED = 0.6      ; Базовая скорость врагов (ячеек/секунду)
+#DEFAULT_SPEED_GROWTH = 0.15   ; Увеличение скорости врагов за уровень
+#DEFAULT_SPEED_CHANGE = 0.1    ; Изменение скорости при нажатии +/-
+
+; Глобальные переменные для конфигурации
+Global TARGET_PERCENT.i = #DEFAULT_TARGET_PERCENT
+Global START_LIVES.i = #DEFAULT_START_LIVES
+Global START_ENEMIES.i = #DEFAULT_START_ENEMIES
+Global MAX_FPS.i = #DEFAULT_MAX_FPS
+Global BASE_SPEED.f = #DEFAULT_BASE_SPEED
+Global SPEED_GROWTH.f = #DEFAULT_SPEED_GROWTH
+Global SPEED_CHANGE.f = #DEFAULT_SPEED_CHANGE
 
 ; Типы ячеек игрового поля
 Enumeration
@@ -28,6 +40,7 @@ EndEnumeration
 #COLOR_TEXT = $00FF00     ; Зеленый - текст HUD
 #COLOR_HUD_BG = $000000   ; Черный - фон HUD
 #COLOR_WHITE = $FFFFFF    ; Белый - текст паузы и помощи
+#COLOR_RED = $FF0000      ; Красный - для диалогов
 
 Structure Enemy
   x.f    ; X координата врага
@@ -58,8 +71,11 @@ Global level_complete.i          ; Флаг завершения уровня
 Global game_over.i               ; Флаг окончания игры
 Global game_paused.i = #False    ; Флаг паузы
 Global show_help.i = #False      ; Флаг показа справки
-Global enemy_speed.f = #BASE_SPEED ; Текущая скорость врагов
+Global enemy_speed.f = #DEFAULT_BASE_SPEED ; Текущая скорость врагов
 Global any_key_pressed.i = #False ; Флаг нажатия любой клавиши
+Global exit_confirmation.i = #False ; Флаг подтверждения выхода
+Global restart_game.i = #False   ; Флаг перезапуска игры
+Global current_enemy_count.i = #DEFAULT_START_ENEMIES ; Текущее количество врагов
 
 ; Глобальные шрифты
 Global pause_font.i = #PB_Any    
@@ -67,6 +83,51 @@ Global help_font.i = #PB_Any
 Global help_small_font.i = #PB_Any 
 Global big_font.i = #PB_Any      
 Global medium_font.i = #PB_Any   
+Global dialog_font.i = #PB_Any
+
+Procedure LoadConfigFromINI()
+  ; Загрузка конфигурации из INI файла
+  If OpenPreferences("xonix.ini")
+    TARGET_PERCENT = ReadPreferenceInteger("TargetPercent", #DEFAULT_TARGET_PERCENT)
+    START_LIVES = ReadPreferenceInteger("StartLives", #DEFAULT_START_LIVES)
+    START_ENEMIES = ReadPreferenceInteger("StartEnemies", #DEFAULT_START_ENEMIES)
+    MAX_FPS = ReadPreferenceInteger("MaxFPS", #DEFAULT_MAX_FPS)
+    BASE_SPEED = ReadPreferenceFloat("BaseSpeed", #DEFAULT_BASE_SPEED)
+    SPEED_GROWTH = ReadPreferenceFloat("SpeedGrowth", #DEFAULT_SPEED_GROWTH)
+    SPEED_CHANGE = ReadPreferenceFloat("SpeedChange", #DEFAULT_SPEED_CHANGE)
+    
+    ClosePreferences()
+    ProcedureReturn #True
+  Else
+    ; Файл не существует, используем значения по умолчанию
+    TARGET_PERCENT = #DEFAULT_TARGET_PERCENT
+    START_LIVES = #DEFAULT_START_LIVES
+    START_ENEMIES = #DEFAULT_START_ENEMIES
+    MAX_FPS = #DEFAULT_MAX_FPS
+    BASE_SPEED = #DEFAULT_BASE_SPEED
+    SPEED_GROWTH = #DEFAULT_SPEED_GROWTH
+    SPEED_CHANGE = #DEFAULT_SPEED_CHANGE
+    ProcedureReturn #False
+  EndIf
+EndProcedure
+
+Procedure SaveConfigToINI()
+  ; Сохранение конфигурации в INI файл
+  If CreatePreferences("xonix.ini")
+    WritePreferenceInteger("TargetPercent", TARGET_PERCENT)
+    WritePreferenceInteger("StartLives", START_LIVES)
+    WritePreferenceInteger("StartEnemies", START_ENEMIES)
+    WritePreferenceInteger("MaxFPS", MAX_FPS)
+    WritePreferenceFloat("BaseSpeed", BASE_SPEED)
+    WritePreferenceFloat("SpeedGrowth", SPEED_GROWTH)
+    WritePreferenceFloat("SpeedChange", SPEED_CHANGE)
+    
+    ClosePreferences()
+    ProcedureReturn #True
+  Else
+    ProcedureReturn #False
+  EndIf
+EndProcedure
 
 Procedure.f RandomFloat(min.f, max.f)
   ; Генерация случайного числа в диапазоне
@@ -271,6 +332,9 @@ Procedure LoadGameFonts()
   If medium_font = #PB_Any
     medium_font = LoadFont(#PB_Any, "Arial", 24, #PB_Font_Bold)
   EndIf
+  If dialog_font = #PB_Any
+    dialog_font = LoadFont(#PB_Any, "Arial", 18, #PB_Font_Bold)
+  EndIf
 EndProcedure
 
 Procedure FreeGameFonts()
@@ -280,6 +344,7 @@ Procedure FreeGameFonts()
   If IsFont(help_small_font) : FreeFont(help_small_font) : help_small_font = #PB_Any : EndIf
   If IsFont(big_font) : FreeFont(big_font) : big_font = #PB_Any : EndIf
   If IsFont(medium_font) : FreeFont(medium_font) : medium_font = #PB_Any : EndIf
+  If IsFont(dialog_font) : FreeFont(dialog_font) : dialog_font = #PB_Any : EndIf
 EndProcedure
 
 Procedure DrawScreen()
@@ -332,14 +397,14 @@ Procedure DrawScreen()
   DrawText(10, hud_y, "Lvl:" + Str(game_stats\level), #COLOR_TEXT)
   DrawText(80, hud_y, "Lives:" + Str(game_stats\lives), #COLOR_TEXT)
   DrawText(150, hud_y, "Filled:" + StrF(game_stats\filled, 1) + "%", #COLOR_TEXT)
-  DrawText(250, hud_y, "Target:" + Str(#TARGET_PERCENT) + "%", #COLOR_TEXT)
+  DrawText(250, hud_y, "Target:" + Str(TARGET_PERCENT) + "%", #COLOR_TEXT)
   DrawText(350, hud_y, "Enemies:" + ListSize(enemies()), #COLOR_TEXT)
   DrawText(450, hud_y, "Speed:" + StrF(enemy_speed, 1), #COLOR_TEXT)
   DrawText(550, hud_y, "Esc=Quit", #COLOR_TEXT)
   DrawText(630, hud_y, "F1=Help", #COLOR_TEXT)
   
   ; Сообщение паузы
-  If game_paused And Not show_help
+  If game_paused And Not show_help And Not exit_confirmation
     If IsFont(pause_font)
       DrawingFont(FontID(pause_font))
     EndIf
@@ -397,6 +462,33 @@ Procedure DrawScreen()
     DrawText(help_x + (help_width - TextWidth(footer)) / 2, help_y + 290, footer, #COLOR_WHITE)
   EndIf
   
+  ; Диалог подтверждения выхода
+  If exit_confirmation
+    Protected dialog_width.i = 400
+    Protected dialog_height.i = 150
+    Protected dialog_x.i = (screen_width - dialog_width) / 2
+    Protected dialog_y.i = (screen_height - dialog_height) / 2
+    
+    ; Фон диалога
+    Box(dialog_x, dialog_y, dialog_width, dialog_height, #COLOR_HUD_BG)
+    Box(dialog_x, dialog_y, dialog_width, dialog_height, #COLOR_WHITE)
+    Box(dialog_x + 2, dialog_y + 2, dialog_width - 4, dialog_height - 4, #COLOR_HUD_BG)
+    
+    ; Текст диалога
+    If IsFont(dialog_font)
+      DrawingFont(FontID(dialog_font))
+    EndIf
+    DrawingMode(#PB_2DDrawing_Transparent)
+    
+    Protected exit_text.s = "Are you sure you want to quit?"
+    Protected exit_width.i = TextWidth(exit_text)
+    DrawText(dialog_x + (dialog_width - exit_width) / 2, dialog_y + 30, exit_text, #COLOR_WHITE)
+    
+    Protected choice_text.s = "Y - Yes, N - No"
+    Protected choice_width.i = TextWidth(choice_text)
+    DrawText(dialog_x + (dialog_width - choice_width) / 2, dialog_y + 80, choice_text, #COLOR_WHITE)
+  EndIf
+  
   StopDrawing()
   
   FlipBuffers()
@@ -432,7 +524,7 @@ Procedure LevelBanner(level.i)
 EndProcedure
 
 Procedure GameOverScreen()
-  ; Экран окончания игры
+  ; Экран окончания игры с предложением сыграть еще раз
   ClearScreen(#COLOR_SEA)
   StartDrawing(ScreenOutput())
   
@@ -444,25 +536,37 @@ Procedure GameOverScreen()
   
   Protected gameover_text.s = "GAME OVER"
   Protected gameover_width.i = TextWidth(gameover_text)
-  DrawText(screen_width/2 - gameover_width/2, screen_height/2 - 40, gameover_text, #COLOR_TEXT)
+  DrawText(screen_width/2 - gameover_width/2, screen_height/2 - 60, gameover_text, #COLOR_TEXT)
   
-  ; Инструкция
+  ; Статистика
   If IsFont(medium_font)
     DrawingFont(FontID(medium_font))
   EndIf
   
-  Protected exit_text.s = "press any key to exit"
-  Protected exit_width.i = TextWidth(exit_text)
-  DrawText(screen_width/2 - exit_width/2, screen_height/2 + 20, exit_text, #COLOR_TEXT)
+  Protected level_text.s = "Level reached: " + Str(game_stats\level)
+  Protected level_width.i = TextWidth(level_text)
+  DrawText(screen_width/2 - level_width/2, screen_height/2 - 10, level_text, #COLOR_TEXT)
+  
+  ; Инструкция
+  Protected restart_text.s = "Press R to play again or ESC to quit"
+  Protected restart_width.i = TextWidth(restart_text)
+  DrawText(screen_width/2 - restart_width/2, screen_height/2 + 40, restart_text, #COLOR_TEXT)
   
   StopDrawing()
   FlipBuffers()
   
-  ; Ждем нажатия любой клавиши
+  ; Ждем нажатия клавиши R или ESC
   Repeat
     Delay(50)
     ExamineKeyboard()
-  Until KeyboardReleased(#PB_Key_All)
+    If KeyboardPushed(#PB_Key_R)
+      restart_game = #True
+      Break
+    ElseIf KeyboardPushed(#PB_Key_Escape)
+      restart_game = #False
+      Break
+    EndIf
+  ForEver
 EndProcedure
 
 Procedure LevelCompleteScreen(level.i)
@@ -562,12 +666,28 @@ Procedure ProcessInput()
   Static last_plus_key.i = #False
   Static last_minus_key.i = #False
   Static last_n_key.i = #False
+  Static last_esc_key.i = #False
+  Static last_y_key.i = #False
+  Static last_n_confirm_key.i = #False
   
-  ; Выход по Esc
-  If KeyboardPushed(#PB_Key_Escape)
-    game_over = #True
+  ; Если показан диалог подтверждения выхода
+  If exit_confirmation
+    If KeyboardPushed(#PB_Key_Y) And Not last_y_key
+      game_over = #True
+      exit_confirmation = #False
+    ElseIf KeyboardPushed(#PB_Key_N) And Not last_n_confirm_key
+      exit_confirmation = #False
+    EndIf
+    last_y_key = KeyboardPushed(#PB_Key_Y)
+    last_n_confirm_key = KeyboardPushed(#PB_Key_N)
     ProcedureReturn
   EndIf
+  
+  ; Выход по Esc с подтверждением
+  If KeyboardPushed(#PB_Key_Escape) And Not last_esc_key
+    exit_confirmation = #True
+  EndIf
+  last_esc_key = KeyboardPushed(#PB_Key_Escape)
   
   ; Переключение паузы клавишей P
   If KeyboardPushed(#PB_Key_P) And Not last_p_key
@@ -595,7 +715,7 @@ Procedure ProcessInput()
   
   ; Увеличение скорости врагов клавишей +
   If KeyboardPushed(#PB_Key_Add) And Not last_plus_key
-    enemy_speed + #SPEED_CHANGE
+    enemy_speed + SPEED_CHANGE
     ; Обновляем скорость всех врагов
     ForEach enemies()
       Protected magnitude.f = Sqr(enemies()\vx * enemies()\vx + enemies()\vy * enemies()\vy)
@@ -608,8 +728,8 @@ Procedure ProcessInput()
   last_plus_key = KeyboardPushed(#PB_Key_Add)
   
   ; Уменьшение скорости врагов клавишей -
-  If KeyboardPushed(#PB_Key_Subtract) And Not last_minus_key And enemy_speed > #SPEED_CHANGE
-    enemy_speed - #SPEED_CHANGE
+  If KeyboardPushed(#PB_Key_Subtract) And Not last_minus_key And enemy_speed > SPEED_CHANGE
+    enemy_speed - SPEED_CHANGE
     ; Обновляем скорость всех врагов
     ForEach enemies()
       magnitude.f = Sqr(enemies()\vx * enemies()\vx + enemies()\vy * enemies()\vy)
@@ -624,11 +744,12 @@ Procedure ProcessInput()
   ; Добавление нового врага клавишей N
   If KeyboardPushed(#PB_Key_N) And Not last_n_key
     AddRandomEnemy(grid_width, grid_height, enemy_speed)
+    current_enemy_count + 1
   EndIf
   last_n_key = KeyboardPushed(#PB_Key_N)
   
   ; Обработка клавиш движения только если нет паузы и справки
-  If Not game_paused And Not show_help
+  If Not game_paused And Not show_help And Not exit_confirmation
     If KeyboardPushed(#PB_Key_W) Or KeyboardPushed(#PB_Key_Up)
       player_vx = 0
       player_vy = -1
@@ -649,13 +770,12 @@ Procedure ProcessInput()
   EndIf
 EndProcedure
 
-
 Procedure UpdateGame(dt.f)
   ; Обновление игровой логики
   Protected nx.i, ny.i, e.Enemy
   
-  ; Не обновлять игру если пауза или показана справки
-  If game_paused Or show_help
+  ; Не обновлять игру если пауза или показана справки или диалог выхода
+  If game_paused Or show_help Or exit_confirmation
     ProcedureReturn
   EndIf
   
@@ -795,26 +915,43 @@ Procedure UpdateGame(dt.f)
   
   ; Проверка завершения уровня
   game_stats\filled = PercentLand(grid_width, grid_height)
-  If game_stats\filled >= #TARGET_PERCENT
+  If game_stats\filled >= TARGET_PERCENT
     level_complete = #True
   EndIf
 EndProcedure
 
-Procedure Main()
-  ; Главная процедура игры
-  Protected level.i = 1
-  Protected last_time.i, current_time.i, dt.f
-  Protected frame_time.i = 1000 / #MAX_FPS
-  Protected speed.f
-  Protected i.i
-  Protected sleep_time.i
-  Protected event.i
+Procedure StartLevel(level.i, enemy_count.i, speed.f)
+  ; Инициализация нового уровня
+  InitGrid(grid_width, grid_height)
   
-  ; Инициализация графического экрана
-  InitSprite()
-  InitKeyboard()
-  OpenWindow(0, 0, 0, screen_width, screen_height, "Xonix Game", #PB_Window_SystemMenu | #PB_Window_ScreenCentered)
-  OpenWindowedScreen(WindowID(0), 0, 0, screen_width, screen_height)
+  ; Сброс позиции игрока
+  player_x = grid_width / 2
+  player_y = grid_height - 1
+  player_vx = 0
+  player_vy = 0
+  player_moving = #False
+  
+  ; Очистка врагов
+  ClearList(enemies())
+  
+  ; Создание врагов
+  Protected i.i
+  For i = 1 To enemy_count
+    AddRandomEnemy(grid_width, grid_height, speed)
+  Next
+  
+  ; Обновление статистики
+  game_stats\level = level
+  game_stats\filled = PercentLand(grid_width, grid_height)
+  
+  level_complete = #False
+  game_over = #False
+EndProcedure
+
+; --- Основной игровой цикл ---
+Procedure MainGameLoop()
+  Protected last_time.i = ElapsedMilliseconds()
+  Protected frame_time.i, dt.f
   
   ; Загрузка шрифтов
   LoadGameFonts()
@@ -822,96 +959,90 @@ Procedure Main()
   ; Показ заставки
   ShowSplashScreen()
   
-  ; Главный игровой цикл
+  ; Инициализация игры
+  StartLevel(1, START_ENEMIES, BASE_SPEED)
+  game_stats\lives = START_LIVES
+  LevelBanner(1)
+  
+  ; Основной игровой цикл
   Repeat
-    ; Инициализация уровня
-    game_over = #False
-    level_complete = #False
-    player_moving = #False
-    player_x = grid_width / 2
-    player_y = grid_height - 1
-    player_vx = 0
-    player_vy = 0
-    
-    ; Настройка скорости врагов в зависимости от уровня
-    speed = #BASE_SPEED + (level - 1) * #SPEED_GROWTH
-    enemy_speed = speed
-    
-    ; Инициализация сетки
-    InitGrid(grid_width, grid_height)
-    
-    ; Инициализация врагов
-    ClearList(enemies())
-    For i = 1 To #START_ENEMIES + level - 1
-      AddRandomEnemy(grid_width, grid_height, speed)
-    Next
-    
-    ; Инициализация статистики
-    game_stats\level = level
-    game_stats\lives = #START_LIVES
-    game_stats\filled = PercentLand(grid_width, grid_height)
-    
-    ; Баннер уровня
-    LevelBanner(level)
-    
-    ; Игровой цикл уровня
+    frame_time = ElapsedMilliseconds() - last_time
     last_time = ElapsedMilliseconds()
-    Repeat
-      current_time = ElapsedMilliseconds()
-      dt = (current_time - last_time) / 1000.0
-      last_time = current_time
-      
-      ; Ограничение FPS
-      sleep_time = frame_time - (ElapsedMilliseconds() - current_time)
-      If sleep_time > 0
-        Delay(sleep_time)
-      EndIf
-      
-      ; Обработка событий
-      Repeat
-        event = WindowEvent()
-        If event = #PB_Event_CloseWindow
-          game_over = #True
-          Break 2
-        EndIf
-      Until event = 0
-      
-      ; Обработка ввода
-      ExamineKeyboard()
-      ProcessInput()
-      
-      ; Обновление игры
-      UpdateGame(dt)
-      
-      ; Отрисовка
-      DrawScreen()
-      
-    Until level_complete Or game_over
+    dt = frame_time / 1000.0
     
-    If level_complete
-      LevelCompleteScreen(level)
-      level + 1
+    ; Ограничение FPS
+    If dt < 1.0 / MAX_FPS
+      Delay((1.0 / MAX_FPS - dt) * 1000)
+      dt = 1.0 / MAX_FPS
     EndIf
     
-  Until game_over
-  
-  ; Экран окончания игры
-  If game_stats\lives <= 0
-    GameOverScreen()
-  EndIf
+    ; Обработка событий окна
+    Repeat
+      Define event = WindowEvent()
+      If event = #PB_Event_CloseWindow
+        game_over = #True
+        Break 2
+      EndIf
+    Until event = 0
+    
+    ExamineKeyboard()
+    ProcessInput()
+    UpdateGame(dt)
+    DrawScreen()
+    
+    ; Проверка завершения уровня
+    If level_complete
+      LevelCompleteScreen(game_stats\level)
+      enemy_speed + SPEED_GROWTH
+      current_enemy_count + 1
+      
+      ; Переход на следующий уровень с сохранением пользовательских параметров
+      StartLevel(game_stats\level + 1, current_enemy_count, enemy_speed)
+      LevelBanner(game_stats\level)
+    EndIf
+    
+    ; Проверка окончания игры
+    If game_over
+      GameOverScreen()
+      If restart_game
+        ; Перезапуск игры с начальными параметрами
+        enemy_speed = BASE_SPEED
+        current_enemy_count = START_ENEMIES
+        game_stats\lives = START_LIVES
+        StartLevel(1, START_ENEMIES, BASE_SPEED)
+        LevelBanner(1)
+        game_over = #False
+      Else
+        Break
+      EndIf
+    EndIf
+    
+  Until KeyboardPushed(#PB_Key_Escape) And Not exit_confirmation
   
   ; Освобождение ресурсов
   FreeGameFonts()
 EndProcedure
 
-; Запуск игры
-Main()
+; --- Точка входа программы ---
+; Загрузка конфигурации перед инициализацией игры
+LoadConfigFromINI()
+
+InitSprite()
+InitKeyboard()
+
+OpenWindow(0, 0, 0, screen_width, screen_height, "Xonix Game v1.1", #PB_Window_SystemMenu | #PB_Window_ScreenCentered)
+OpenWindowedScreen(WindowID(0), 0, 0, screen_width, screen_height)
+
+Repeat
+  MainGameLoop()
+  ; Сохранение конфигурации при выходе из игры
+  SaveConfigToINI()
+Until Not restart_game
+
 End
 ; IDE Options = PureBasic 6.21 (Windows - x86)
-; CursorPosition = 629
+; CursorPosition = 2
 ; Folding = ----
-; Optimizer
-; EnableThread
 ; EnableXP
 ; UseIcon = Xonix_Hi.ico
 ; Executable = xonix.exe
