@@ -1,5 +1,11 @@
 # Xonix Console
 
+[Русский](#русский) · [English](#english)
+
+<a id="русский"></a>
+
+## Русский
+
 Консольная реализация классической аркадной игры Xonix на PureBasic 6.x для Windows.
 
 ## Цель игры
@@ -92,3 +98,101 @@
 
 Основной исходный файл — `xonix_console.pb`. Иконка `Xonix.ico` встраивается в
 исполняемый файл во время сборки.
+
+---
+
+<a id="english"></a>
+
+## English
+
+A console implementation of the classic Xonix arcade game, written in
+PureBasic 6.x for Windows.
+
+### Objective
+
+The player moves across captured land and claims the open field by drawing
+lines through it. When a line reconnects with captured land, it closes and the
+area containing no balls becomes captured.
+
+By default, at least 75% of the field must be captured to advance to the next
+level. Colliding with an enemy or with your own unfinished trail costs one
+life.
+
+### Enemies
+
+There are two enemy types:
+
+- `●` — ball. Moves inside the open field, bounces off its boundaries, and
+  kills the player when it touches either the player or an unfinished trail.
+- `X` — hunter. Moves only across captured land and bounces off its boundaries.
+  Contact with a hunter costs one life.
+
+Level one starts with one hunter. Every new level adds one ball and one hunter,
+and increases the ball speed. After the player loses a life, hunters return to
+the top edge of the field.
+
+### Controls
+
+| Key | Action |
+|---|---|
+| `W/A/S/D` or arrow keys | Change the player's direction |
+| `P` | Pause or resume the game |
+| `F1` | Show or hide help |
+| `+` / `-` | Increase or decrease ball speed |
+| `N` | Add another ball |
+| `H` | Add another hunter |
+| `Esc` or `Q` | Open the quit confirmation |
+| `Y` / `N` | Confirm or cancel quitting |
+| `R` | Restart after game over |
+
+Enemies added manually remain included when advancing to the next level.
+
+### HUD
+
+The bottom line of the game screen shows:
+
+- `Lvl` — current level;
+- `Lives` — remaining lives;
+- `Fill` — percentage of the field captured;
+- `Goal` — percentage required to complete the level;
+- `En` — number of balls;
+- `Hun` — number of hunters;
+- `Spd` — current ball speed.
+
+### Configuration
+
+On startup, the game reads `xonix.ini` from the current working directory. The
+current values are saved back to that file when the game exits.
+
+| Setting | Default | Description |
+|---|---:|---|
+| `TargetPercent` | `75` | Field percentage required to complete a level |
+| `StartLives` | `3` | Initial number of lives |
+| `StartEnemies` | `2` | Initial number of balls |
+| `MaxFPS` | `30` | Maximum screen refresh rate |
+| `BaseSpeed` | `1.2` | Initial ball speed |
+| `SpeedGrowth` | `0.15` | Ball speed increase on each new level |
+| `SpeedChange` | `0.1` | Speed adjustment step for the `+` and `-` keys |
+
+The initial hunter count is one and is defined by `#DEFAULT_START_HUNTERS` in
+the source code. Their movement interval is defined by `#HUNTER_STEP_MS`.
+
+### Running
+
+Launch `xonix_console.exe` to play the prebuilt version. The game uses the
+current console window size; the minimum game field size is 40 × 20 characters.
+
+Windows with Unicode console support is required.
+
+### Building
+
+Install PureBasic 6.x and run the following command from the project directory:
+
+```powershell
+& 'C:\Program Files\PureBasic\Compilers\pbcompiler.exe' `
+  '.\xonix_console.pb' /EXE '.\xonix_console.exe' `
+  /ICON '.\Xonix.ico' /CONSOLE
+```
+
+The main source file is `xonix_console.pb`. `Xonix.ico` is embedded into the
+executable during the build.
