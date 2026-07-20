@@ -2,6 +2,8 @@
 
 [Русский](#русский) · [English](#english)
 
+![Игровой процесс Xonix Console / Xonix Console gameplay](xonix-console-gameplay.png)
+
 <a id="русский"></a>
 
 ## Русский
